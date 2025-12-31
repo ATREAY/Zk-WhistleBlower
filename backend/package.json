@@ -1,0 +1,19 @@
+{
+  "name": "zk-whistle-backend",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "hardhat test",
+    "compile": "hardhat compile",
+    "deploy": "hardhat run scripts/deploy.js --network ganache"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "hardhat": "^2.22.0",
+    "poseidon-solidity": "^0.0.5"
+  },
+  "dependencies": {
+    "@semaphore-protocol/contracts": "^4.0.0",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.10.0"
+  }
+}
