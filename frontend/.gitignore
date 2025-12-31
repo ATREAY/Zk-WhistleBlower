@@ -12,7 +12,10 @@ node_modules/
 
 # testing
 /coverage
-.jpg/
+*.jpg
+*.png
+*.gif
+*.jpeg
 
 # next.js
 .next/
