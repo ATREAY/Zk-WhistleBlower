@@ -7,7 +7,7 @@ import { ethers } from "ethers";
 import axios from "axios";
 
 // --- CONFIGURATION ---
-const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS || "0xbFCC4daA57F941e883aD74CeFD8A8a9591DddE10"; 
+const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS!; 
 
 const ABI = [
   "function joinGroup(uint256 identityCommitment) external",
@@ -37,7 +37,7 @@ export default function Home() {
     setStatus("Identity Generated ✓");
   };
 
-  const joinGroup = async () => {
+  /* const joinGroup = async () => {
     if (!identity) return;
     setStatus("Joining Group...");
     try {
@@ -49,6 +49,49 @@ export default function Home() {
       await tx.wait();
       setHasJoined(true);
       setStatus("Joined successfully!");
+    } catch (e: any) {
+      console.error(e);
+      setStatus("Error: " + (e.reason || e.message));
+    }
+  }; */
+
+ // ... inside your Home() component ...
+
+  const joinGroup = async () => {
+    if (!identity) return;
+    setStatus("Joining Group...");
+
+    try {
+      if (!window.ethereum) throw new Error("No Wallet Found!");
+
+      // 1. FORCE NETWORK SWITCH TO SEPOLIA
+      try {
+        await window.ethereum.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: "11155111" }], // Chain ID for Sepolia (11155111)
+        });
+      } catch (switchError: any) {
+        // This error code means Sepolia is not added to their wallet
+        if (switchError.code === 4902) {
+          setStatus("Please add Sepolia Network to your Wallet manually!");
+          return;
+        }
+      }
+
+      // 2. CONNECT TO WALLET (Standard Logic)
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      
+      // 3. SEND TRANSACTION
+      const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
+      const tx = await contract.joinGroup(identity.commitment);
+      
+      setStatus("Transaction Sent! Waiting...");
+      await tx.wait();
+      
+      setHasJoined(true);
+      setStatus("Joined successfully!");
+
     } catch (e: any) {
       console.error(e);
       setStatus("Error: " + (e.reason || e.message));
@@ -84,7 +127,8 @@ export default function Home() {
 
       // 2. Generate Proof
       setStatus("Generating ZK Proof...");
-      const provider = new ethers.JsonRpcProvider("http://127.0.0.1:7545");
+      //const provider = new ethers.JsonRpcProvider("http://127.0.0.1:7545");
+      const provider = new ethers.JsonRpcProvider("https://eth-sepolia.g.alchemy.com/v2/sShDu-OIPWogtVByKk1K4");
       const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
       const groupId = await contract.groupId(); 
       
@@ -117,18 +161,34 @@ export default function Home() {
 
   const fetchLogs = async () => {
     try {
-      const provider = new ethers.JsonRpcProvider("http://127.0.0.1:7545");
+      //const provider = new ethers.JsonRpcProvider("http://127.0.0.1:7545");
+      // 1. Setup Provider (Use your correct Alchemy URL)
+      const provider = new ethers.JsonRpcProvider("https://eth-sepolia.g.alchemy.com/v2/sShDu-OIPWogtVByKk1K4");
       const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
-      const events = await contract.queryFilter("NewComplaint");
+
+      // 2. Get the Current Block
+      const currentBlock = await provider.getBlockNumber();
+
+      // 3. STRICT LIMIT: Only scan the last 10 blocks (Alchemy Free Tier Rule)
+      // If we ask for more, the request will fail.
+      const startBlock = currentBlock - 5; 
+
+      console.log(`Scanning recent blocks: ${startBlock} to ${currentBlock}`);
+
+      // 4. Fetch Logs
+      const events = await contract.queryFilter("NewComplaint", startBlock, currentBlock);
       
       const formattedLogs = events.map((event: any) => ({
         id: event.transactionHash,
         message: event.args[1],
         block: event.blockNumber
       }));
+
+      // Show newest first
       setLogs(formattedLogs.reverse());
+
     } catch (e) {
-      console.log("Error fetching logs", e);
+      console.error("Error fetching logs:", e);
     }
   };
 
@@ -216,7 +276,7 @@ export default function Home() {
             {logs.map((log) => {
               // SPLIT LOGIC: Separate Hash and Text
               const parts = log.message.split("|||");
-              const isImage = parts[0].startsWith("Qm") || parts[0].startsWith("baf");
+              const isImage = parts[0].startsWith("Qm") || parts[0].startsWith("baf") || parts[0].startsWith("0x");
               
               const displayHash = isImage ? parts[0] : null;
               const displayText = isImage ? parts[1] : parts[0];

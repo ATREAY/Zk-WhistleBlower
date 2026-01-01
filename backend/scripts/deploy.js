@@ -1,7 +1,7 @@
 const { ethers } = require("hardhat");
 
 async function main() {
-  console.log("🚀 Starting Local Deployment to Ganache...");
+  console.log("🚀 Starting Local Deployment...");
 
   // 1. DEPLOY POSEIDON LIBRARY
   // Since we added the helper file, Hardhat now knows what "PoseidonT3" is!
