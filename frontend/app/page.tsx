@@ -1,339 +1,164 @@
 "use client";
-import { useState, useEffect } from "react";
-import { Identity } from "@semaphore-protocol/identity";
-import { Group } from "@semaphore-protocol/group";
-import { generateProof } from "@semaphore-protocol/proof";
-import { ethers } from "ethers";
-import axios from "axios";
 
-// --- CONFIGURATION ---
-const CONTRACT_ADDRESS = process.env.NEXT_PUBLIC_CONTRACT_ADDRESS!; 
+import Link from "next/link";
+import { ArrowRight, Shield, Lock, EyeOff, Zap } from "lucide-react";
 
-const ABI = [
-  "function joinGroup(uint256 identityCommitment) external",
-  "function groupId() view returns (uint256)",
-  "event NewComplaint(uint256 indexed signal, string ipfsCid)",
-  "event GroupCreated(uint256 indexed groupId, address indexed admin)"
-];
-
-export default function Home() {
-  // --- STATE ---
-  const [identity, setIdentity] = useState<Identity | null>(null);
-  const [hasJoined, setHasJoined] = useState(false);
-  const [status, setStatus] = useState("Waiting for action...");
-  const [complaint, setComplaint] = useState("");
-  
-  // FIXED: Use 'any[]' so TypeScript stops yelling about 'id' vs 'msg'
-  const [logs, setLogs] = useState<any[]>([]);
-  
-  // NEW FEATURES STATE
-  const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  // --- LOGIC ---
-  const createIdentity = () => {
-    const newIdentity = new Identity();
-    setIdentity(newIdentity);
-    setStatus("Identity Generated ✓");
-  };
-
-  /* const joinGroup = async () => {
-    if (!identity) return;
-    setStatus("Joining Group...");
-    try {
-      if (!window.ethereum) throw new Error("No Wallet Found!");
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
-      const tx = await contract.joinGroup(identity.commitment);
-      await tx.wait();
-      setHasJoined(true);
-      setStatus("Joined successfully!");
-    } catch (e: any) {
-      console.error(e);
-      setStatus("Error: " + (e.reason || e.message));
-    }
-  }; */
-
- // ... inside your Home() component ...
-
-  const joinGroup = async () => {
-    if (!identity) return;
-    setStatus("Joining Group...");
-
-    try {
-      if (!window.ethereum) throw new Error("No Wallet Found!");
-
-      // 1. FORCE NETWORK SWITCH TO SEPOLIA
-      try {
-        await window.ethereum.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: "11155111" }], // Chain ID for Sepolia (11155111)
-        });
-      } catch (switchError: any) {
-        // This error code means Sepolia is not added to their wallet
-        if (switchError.code === 4902) {
-          setStatus("Please add Sepolia Network to your Wallet manually!");
-          return;
-        }
-      }
-
-      // 2. CONNECT TO WALLET (Standard Logic)
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-      
-      // 3. SEND TRANSACTION
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, signer);
-      const tx = await contract.joinGroup(identity.commitment);
-      
-      setStatus("Transaction Sent! Waiting...");
-      await tx.wait();
-      
-      setHasJoined(true);
-      setStatus("Joined successfully!");
-
-    } catch (e: any) {
-      console.error(e);
-      setStatus("Error: " + (e.reason || e.message));
-    }
-  };
-
-  const sendWhistle = async () => {
-    if (!identity) return;
-    if (!complaint && !file) return alert("Enter text or upload file");
-
-    setLoading(true);
-    setStatus("Processing...");
-
-    try {
-      let finalContent = complaint;
-
-      // 1. Upload File (If exists)
-      if (file) {
-        setStatus("Uploading to IPFS...");
-        const formData = new FormData();
-        formData.append("file", file);
-        const uploadRes = await axios.post("/api/upload", formData, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-        
-        if (uploadRes.data.ipfsHash) {
-          // --- FIX IS HERE ---
-          // Combine Hash and Text using a generic separator "|||"
-          // If complaint is empty, it just sends the hash.
-          finalContent = `${uploadRes.data.ipfsHash}|||${complaint}`; 
-        }
-      }
-
-      // 2. Generate Proof
-      setStatus("Generating ZK Proof...");
-      //const provider = new ethers.JsonRpcProvider("http://127.0.0.1:7545");
-      const provider = new ethers.JsonRpcProvider("https://eth-sepolia.g.alchemy.com/v2/sShDu-OIPWogtVByKk1K4");
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
-      const groupId = await contract.groupId(); 
-      
-      const group = new Group([identity.commitment]);
-      const proof = await generateProof(identity, group, 1, groupId.toString());
-
-      // 3. Send to Relay
-      setStatus("Relaying to Blockchain...");
-      const res = await axios.post("/api/relay", {
-        merkleTreeRoot: proof.merkleTreeRoot,
-        nullifier: proof.nullifier,
-        points: proof.points,
-        signal: 1,
-        merkleTreeDepth: group.depth,
-        ipfsCid: finalContent
-      });
-
-      setStatus(`Whistle Blown! Tx: ${res.data.txHash}`);
-      setComplaint("");
-      setFile(null);
-      fetchLogs();
-
-    } catch (e: any) {
-      console.error(e);
-      setStatus("Error: " + (e.response?.data?.error || e.message));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchLogs = async () => {
-    try {
-      //const provider = new ethers.JsonRpcProvider("http://127.0.0.1:7545");
-      // 1. Setup Provider (Use your correct Alchemy URL)
-      const provider = new ethers.JsonRpcProvider("https://eth-sepolia.g.alchemy.com/v2/sShDu-OIPWogtVByKk1K4");
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, provider);
-
-      // 2. Get the Current Block
-      const currentBlock = await provider.getBlockNumber();
-
-      // 3. STRICT LIMIT: Only scan the last 10 blocks (Alchemy Free Tier Rule)
-      // If we ask for more, the request will fail.
-      const startBlock = currentBlock - 5; 
-
-      console.log(`Scanning recent blocks: ${startBlock} to ${currentBlock}`);
-
-      // 4. Fetch Logs
-      const events = await contract.queryFilter("NewComplaint", startBlock, currentBlock);
-      
-      const formattedLogs = events.map((event: any) => ({
-        id: event.transactionHash,
-        message: event.args[1],
-        block: event.blockNumber
-      }));
-
-      // Show newest first
-      setLogs(formattedLogs.reverse());
-
-    } catch (e) {
-      console.error("Error fetching logs:", e);
-    }
-  };
-
-  useEffect(() => { fetchLogs(); }, []);
-
-  // --- ORIGINAL UI (RESTORED) ---
+export default function LandingPage() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24 bg-slate-950 text-white">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        
-        {/* LEFT COLUMN */}
-        <div className="w-full max-w-md space-y-8">
+    <div className="min-h-screen bg-slate-950 text-white font-mono selection:bg-green-500 selection:text-black">
+      
+      {/* --- NAVBAR --- */}
+      <nav className="fixed top-0 w-full z-50 border-b border-gray-800 bg-slate-950/80 backdrop-blur-md">
+        <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="text-xl font-bold flex items-center gap-2">
+            <span className="text-2xl">🤫</span>
+            <span className="text-green-400 tracking-tighter">ZK-WHISTLE</span>
+          </div>
+          <Link href="/dashboard"> {/* Change this to wherever your main app lives */}
+            <button className="px-5 py-2 text-sm font-bold bg-white text-black hover:bg-green-400 hover:text-black transition-colors rounded-sm">
+              LAUNCH APP_
+            </button>
+          </Link>
+        </div>
+      </nav>
+
+      {/* --- HERO SECTION --- */}
+      <section className="pt-40 pb-20 px-6 relative overflow-hidden">
+        {/* Background Glow */}
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 w-150 h-150 bg-green-500/10 blur-[100px] rounded-full pointer-events-none" />
+
+        <div className="max-w-4xl mx-auto text-center relative z-10">
+          <div className="inline-block px-3 py-1 mb-6 border border-green-500/30 rounded-full bg-green-500/10 text-green-400 text-xs font-bold uppercase tracking-widest">
+            Protocol Live on Sepolia
+          </div>
           
-          {/* Header */}
-          <div>
-            <h1 className="text-4xl font-bold text-green-400 mb-2">Zk-Whistle 🤫</h1>
-            <p className="text-gray-400">Anonymous Campus Reporting (Zero-Knowledge)</p>
-          </div>
+          <h1 className="text-5xl md:text-7xl font-bold mb-8 leading-tight">
+            Speak Truth. <br />
+            <span className="text-transparent bg-clip-text bg-linear-to-r from-green-400 to-emerald-600">
+              Stay Invisible.
+            </span>
+          </h1>
+          
+          <p className="text-gray-400 text-lg md:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
+            The first decentralized whistleblower platform powered by <span className="text-white font-bold">Zero-Knowledge Proofs</span>. 
+            Prove your membership without revealing your identity.
+          </p>
 
-          {/* Status Box */}
-          <div className="p-4 border border-gray-700 rounded bg-slate-900 text-yellow-300 break-all">
-            Status: {status}
-          </div>
-
-          {/* Step 1 Box */}
-          <div className="p-6 border border-gray-700 rounded bg-slate-900">
-            <h2 className="text-xl font-bold mb-4 text-blue-400">Step 1: Identity</h2>
-            {!identity ? (
-              <button onClick={createIdentity} className="text-blue-400 hover:underline">
-                Generate Identity -&gt;
+          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+            <Link href="/dashboard">
+              <button className="px-8 py-4 bg-green-500 text-black font-bold text-lg hover:bg-green-400 transition-all flex items-center gap-2 rounded-sm group">
+                START WHISTLEBLOWING
+                <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
               </button>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-green-400">Identity Generated ✓</p>
-                {!hasJoined && (
-                  <button onClick={joinGroup} className="w-full bg-blue-600 hover:bg-blue-700 py-2 rounded font-bold">
-                    Join Group
-                  </button>
-                )}
-              </div>
-            )}
+            </Link>
+            <a href="https://github.com/YourUsername/ZK-Whistle" target="_blank" className="px-8 py-4 border border-gray-700 text-gray-300 font-bold text-lg hover:border-white hover:text-white transition-all rounded-sm">
+              VIEW GITHUB
+            </a>
           </div>
+        </div>
+      </section>
 
-          {/* Step 2 Box (With File Input) */}
-          <div className="p-6 border border-gray-700 rounded bg-slate-900">
-            <h2 className="text-xl font-bold mb-4 text-red-400">Step 2: Whistleblow</h2>
-            
-            <textarea
-              className="w-full bg-slate-800 text-white p-3 rounded border border-gray-600 focus:outline-none focus:border-red-500 mb-4"
-              rows={4}
-              placeholder={file ? "Image selected. Add a caption (optional)..." : "Describe the issue..."}
-              value={complaint}
-              onChange={(e) => setComplaint(e.target.value)}
-              disabled={loading}
-            />
-
-            {/* Simple File Input */}
-            <div className="mb-4">
-              <input 
-                type="file" 
-                onChange={(e) => e.target.files && setFile(e.target.files[0])}
-                className="text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:bg-slate-700 file:text-white hover:file:bg-slate-600"
-                disabled={loading}
-              />
+      {/* --- FEATURES GRID --- */}
+      <section className="py-20 bg-slate-900/50 border-y border-gray-800">
+        <div className="max-w-6xl mx-auto px-6">
+          <div className="grid md:grid-cols-3 gap-8">
+            {/* Feature 1 */}
+            <div className="p-8 border border-gray-800 bg-slate-950 hover:border-green-500/50 transition-colors group">
+              <div className="w-12 h-12 bg-slate-900 rounded-lg flex items-center justify-center mb-6 text-green-400 group-hover:scale-110 transition-transform">
+                <EyeOff size={24} />
+              </div>
+              <h3 className="text-xl font-bold mb-3 text-white">True Anonymity</h3>
+              <p className="text-gray-400 leading-relaxed">
+                Powered by Semaphore Protocol. We cryptographically prove you are a group member without ever revealing <em>which</em> member.
+              </p>
             </div>
 
-            <button
-              onClick={sendWhistle}
-              disabled={!hasJoined || loading}
-              className={`w-full py-3 rounded font-bold transition-colors ${
-                !hasJoined || loading ? "bg-gray-600 cursor-not-allowed" : "bg-red-600 hover:bg-red-700"
-              }`}
-            >
-              {loading ? "Processing..." : "Post Anonymously"}
-            </button>
+            {/* Feature 2 */}
+            <div className="p-8 border border-gray-800 bg-slate-950 hover:border-red-500/50 transition-colors group">
+              <div className="w-12 h-12 bg-slate-900 rounded-lg flex items-center justify-center mb-6 text-red-400 group-hover:scale-110 transition-transform">
+                <Shield size={24} />
+              </div>
+              <h3 className="text-xl font-bold mb-3 text-white">Uncensorable</h3>
+              <p className="text-gray-400 leading-relaxed">
+                Evidence is stored on IPFS (InterPlanetary File System). No central server can delete or alter your report once posted.
+              </p>
+            </div>
+
+            {/* Feature 3 */}
+            <div className="p-8 border border-gray-800 bg-slate-950 hover:border-blue-500/50 transition-colors group">
+              <div className="w-12 h-12 bg-slate-900 rounded-lg flex items-center justify-center mb-6 text-blue-400 group-hover:scale-110 transition-transform">
+                <Zap size={24} />
+              </div>
+              <h3 className="text-xl font-bold mb-3 text-white">Gasless Reporting</h3>
+              <p className="text-gray-400 leading-relaxed">
+                Our relayer handles the gas fees. Your personal wallet address is never linked to the whistleblower transaction.
+              </p>
+            </div>
           </div>
-
         </div>
+      </section>
 
-        {/* RIGHT COLUMN (Feed) */}
-        <div className="w-full max-w-md mt-10 lg:mt-0">
-          <h2 className="text-xl font-bold mb-4 text-gray-300 border-l-4 border-green-500 pl-3">Live Feed</h2>
-          
-          <div className="space-y-4 max-h-150 overflow-y-auto pr-2">
-            {logs.map((log) => {
-              // SPLIT LOGIC: Separate Hash and Text
-              const parts = log.message.split("|||");
-              const isImage = parts[0].startsWith("Qm") || parts[0].startsWith("baf") || parts[0].startsWith("0x");
-              
-              const displayHash = isImage ? parts[0] : null;
-              const displayText = isImage ? parts[1] : parts[0];
+      {/* --- HOW IT WORKS --- */}
+      <section className="py-24 px-6">
+        <div className="max-w-4xl mx-auto">
+          <h2 className="text-3xl font-bold mb-16 text-center border-b border-gray-800 pb-4">
+            <span className="text-green-400">01.</span> HOW IT WORKS
+          </h2>
 
-              return (
-                <div key={log.id} className="p-4 border border-gray-800 rounded bg-slate-900 hover:border-green-900/30 transition group">
-                  
-                  {/* --- NEW: VERIFICATION BADGE --- */}
-                  <div className="flex justify-between items-center mb-3 border-b border-gray-800 pb-2">
-                    <span className="text-green-400 text-[10px] font-mono uppercase tracking-widest flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full bg-green-500 animate-pulse"></span>
-                      ZK-Verified Proof
-                    </span>
-                    <a 
-                      href={`https://sepolia.etherscan.io/tx/${log.id}`} 
-                      target="_blank"
-                      className="text-xs text-gray-600 hover:text-blue-400 transition"
-                    >
-                      View On-Chain ↗
-                    </a>
-                  </div>
-                  {/* ------------------------------- */}
-
-                  {/* SHOW IMAGE (If exists) */}
-                  {displayHash && (
-                    <div className="mb-3">
-                      <img 
-                        src={`https://gateway.pinata.cloud/ipfs/${displayHash}`} 
-                        alt="Evidence" 
-                        className="rounded border border-gray-700 max-h-48 w-full object-cover"
-                      />
-                    </div>
-                  )}
-
-                  {/* SHOW TEXT (If exists) */}
-                  {displayText && (
-                    <p className="text-gray-200 mb-2 font-medium leading-relaxed">
-                      {displayText}
-                    </p>
-                  )}
-
-                  {/* Footer Info */}
-                  <div className="text-[10px] text-gray-500 font-mono mt-2 pt-2 flex justify-between">
-                    <span>Block: #{log.block}</span>
-                    <span className="truncate w-24 opacity-50 group-hover:opacity-100 transition">
-                      Nullifier: {log.id.substring(0, 10)}...
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="space-y-12 relative before:absolute before:left-4 md:before:left-1/2 before:h-full before:w-px before:bg-gray-800">
             
-            {logs.length === 0 && <p className="text-gray-600">No whistles yet.</p>}
+            {/* Step 1 */}
+            <div className="relative flex flex-col md:flex-row items-center justify-between gap-8 md:gap-16">
+              <div className="md:w-1/2 md:text-right order-2 md:order-1">
+                <h3 className="text-xl font-bold text-white mb-2">Generate Identity</h3>
+                <p className="text-gray-400">Create a secret identity locally in your browser. It never leaves your device.</p>
+              </div>
+              <div className="absolute left-4 md:left-1/2 -translate-x-1/2 w-8 h-8 bg-slate-950 border-2 border-green-500 rounded-full z-10"></div>
+              <div className="md:w-1/2 pl-12 md:pl-0 order-1 md:order-2">
+                <div className="p-4 bg-slate-900 border border-gray-800 rounded text-xs text-green-400 font-mono">
+                  &gt; Identity Commitment Created... OK
+                </div>
+              </div>
+            </div>
+
+            {/* Step 2 */}
+            <div className="relative flex flex-col md:flex-row items-center justify-between gap-8 md:gap-16">
+              <div className="md:w-1/2 md:text-right order-2 md:order-1">
+                <div className="p-4 bg-slate-900 border border-gray-800 rounded text-xs text-blue-400 font-mono">
+                  &gt; ZK-Proof Generating... 100%
+                </div>
+              </div>
+              <div className="absolute left-4 md:left-1/2 -translate-x-1/2 w-8 h-8 bg-slate-950 border-2 border-blue-500 rounded-full z-10"></div>
+              <div className="md:w-1/2 pl-12 md:pl-0 order-1 md:order-2">
+                <h3 className="text-xl font-bold text-white mb-2">Create Proof</h3>
+                <p className="text-gray-400">Upload evidence. The system generates a Zero-Knowledge proof that you belong to the group.</p>
+              </div>
+            </div>
+
+            {/* Step 3 */}
+            <div className="relative flex flex-col md:flex-row items-center justify-between gap-8 md:gap-16">
+              <div className="md:w-1/2 md:text-right order-2 md:order-1">
+                <h3 className="text-xl font-bold text-white mb-2">Relay to Blockchain</h3>
+                <p className="text-gray-400">Our relayer submits the proof. The network verifies it, and your report is live—completely anonymous.</p>
+              </div>
+              <div className="absolute left-4 md:left-1/2 -translate-x-1/2 w-8 h-8 bg-slate-950 border-2 border-red-500 rounded-full z-10"></div>
+              <div className="md:w-1/2 pl-12 md:pl-0 order-1 md:order-2">
+                <div className="p-4 bg-slate-900 border border-gray-800 rounded text-xs text-red-400 font-mono">
+                  &gt; Transaction Confirmed. <br/> &gt; Status: Anonymous
+                </div>
+              </div>
+            </div>
+
           </div>
         </div>
+      </section>
 
-      </div>
-    </main>
+      {/* --- FOOTER --- */}
+      <footer className="py-8 border-t border-gray-900 text-center text-gray-500 text-sm">
+        <p>Built for IITH Blockchain Hackathon 🚀</p>
+        <p className="mt-2">ZK-Whistle &copy; 2026</p>
+      </footer>
+
+    </div>
   );
 }
