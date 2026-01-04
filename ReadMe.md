@@ -21,10 +21,19 @@ It uses **Zero-Knowledge Proofs (Semaphore Protocol)** to allow users to prove t
 
 ## 📦 Prerequisites
 
-* Node.js (v18 or higher)
-* A Wallet (Rabby or MetaMask) with **Sepolia ETH**.
-* Alchemy Account (for RPC URL).
-* Pinata Account (for IPFS uploads).
+* **Node.js** (v18 or higher)
+* **A Wallet** (Rabby or MetaMask) installed in your browser.
+* **Sepolia Testnet ETH:**
+    * ⚠️ **Required:** You need at least **0.05 Sepolia ETH** to pay for the initial "Join Group" gas fees (the relayer handles the rest).
+    * 🚰 **Option 1: Free Faucets (Fastest):**
+        * [Google Cloud Web3 Faucet](https://cloud.google.com/application/web3/faucet/ethereum/sepolia)
+        * [Alchemy Sepolia Faucet](https://www.alchemy.com/faucets/ethereum-sepolia) (Requires login)
+    * ⛏️ **Option 2: Worst Case (Mining):**
+        * If standard faucets are empty or erroring, use the [Sepolia PoW Faucet](https://sepolia-faucet.pk910.de/).
+        * **How:** Enter your address and leave the tab open to "mine" ETH in your browser.
+        * **Time Required:** ~1-2 hours to mine 0.05 ETH (depends on your CPU speed).
+* **Alchemy Account** (for RPC URL).
+* **Pinata Account** (for IPFS uploads).
 
 ## ⚙️ Installation & Setup
 
