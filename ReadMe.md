@@ -58,7 +58,7 @@ cd ../frontend && npm install
 
 ### 3. Configure Environment Variables
 
-- Create a `.env` file in your backend directory with the following keys:
+#### Create a `.env` file in your backend directory with the following keys:
 
 * Alchemy RPC URL (Sepolia)
 ```bash
@@ -70,7 +70,7 @@ ALCHEMY_URL="[https://eth-sepolia.g.alchemy.com/v2/YOUR_API_KEY](https://eth-sep
 ```bash
 METAMASK_PRIVATE_KEY="0x..."
 ```
-- Create a `.env.local` file in your frontend directory with the following keys:
+#### Create a `.env.local` file in your frontend directory with the following keys:
 
 * The Contract Address you just deployed in the backend
 ```bash
