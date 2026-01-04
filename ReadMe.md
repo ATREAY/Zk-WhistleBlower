@@ -83,7 +83,7 @@ NEXT_PUBLIC_CONTRACT_ADDRESS="YOUR_CONTRACT_GENERATED_ADDRESS"
 ```bash
 METAMASK_RELAYER_PRIVATE_KEY="0x..."
 ```
-* Pinata Keys for Image Uploads
+* [Pinata Keys](https://app.pinata.cloud/developers/api-keys) for Image Uploads
 ```bash
 PINATA_JWT="YOUR_PINATA_JWT"
 ```
